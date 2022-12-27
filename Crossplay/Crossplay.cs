@@ -5,7 +5,9 @@ using Terraria;
 using Terraria.Localization;
 using Terraria.Net;
 using TerrariaApi.Server;
+using TShockAPI;
 using TShockAPI.Hooks;
+using static Org.BouncyCastle.Math.EC.ECCurve;
 
 namespace Crossplay
 {
@@ -128,19 +130,31 @@ namespace Crossplay
                     break;
                 case PacketTypes.PlayerInfo:
                     {
-                        var length = args.Length - 1;
-                        var bitsbyte = (BitsByte)args.Msg.readBuffer[length];
+                        if (!Configuration<CrossplaySettings>.Settings.EnableClassicSupport)
+                            return;
 
-                        if (Main.GameMode == 3 && !bitsbyte[3])
+                        ref byte gameModeFlags = ref args.Msg.readBuffer[args.Length - 1];
+                        if (Main.GameModeInfo.IsJourneyMode)
                         {
-                            bitsbyte[0] = false;
-                            bitsbyte[1] = false;
-
-                            bitsbyte[3] = true;
-
-                            args.Msg.readBuffer[length] = bitsbyte;
-
-                            Log($"[Crossplay] {(bitsbyte[3] ? "Enabled" : "Disabled")} journeymode for index {args.Msg.whoAmI}.", ConsoleColor.Magenta);
+                            if ((gameModeFlags & 8) != 8)
+                            {
+                                Log($"[Crossplay] Enabled journey mode for index {args.Msg.whoAmI}", color: ConsoleColor.Green);
+                                gameModeFlags |= 8;
+                                if (Main.ServerSideCharacter)
+                                {
+                                    NetMessage.SendData(4, args.Msg.whoAmI, -1, null, args.Msg.whoAmI);
+                                }
+                            }
+                            return;
+                        }
+                        if (TShock.Config.Settings.SoftcoreOnly && (gameModeFlags & 3) != 0)
+                        {
+                            return;
+                        }
+                        if ((gameModeFlags & 8) == 8)
+                        {
+                            Log($"[Crossplay] Disabled journey mode for index {args.Msg.whoAmI}", color: ConsoleColor.Green);
+                            gameModeFlags &= 247;
                         }
                     }
                     break;
