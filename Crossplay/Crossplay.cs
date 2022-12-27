@@ -1,7 +1,9 @@
 ﻿using Auxiliary.Configuration;
 using Auxiliary.Packets;
+using System.Runtime.CompilerServices;
 using Terraria;
 using Terraria.Localization;
+using Terraria.Net;
 using TerrariaApi.Server;
 using TShockAPI.Hooks;
 
@@ -21,7 +23,23 @@ namespace Crossplay
             275,
             276,
             277,
-            278
+            278,
+            279
+        };
+
+        private readonly Dictionary<int, int> _maxItems = new()
+        {
+            { 269, 5453 },
+            { 270, 5453 },
+            { 271, 5453 },
+            { 272, 5453 },
+            { 273, 5453 },
+            { 274, 5456 },
+            { 275, 5456 },
+            { 276, 5456 },
+            { 277, 5456 },
+            { 278, 5456 },
+            { 279, 5456 },
         };
 
         private readonly int[] _clientVersions = new int[Main.maxPlayers];
@@ -65,6 +83,9 @@ namespace Crossplay
                 _serverVersion = Configuration<CrossplaySettings>.Settings.FakeVersion;
             else
                 _serverVersion = Main.curRelease;
+
+            On.Terraria.Net.NetManager.Broadcast_NetPacket_int += OnBroadcast;
+            On.Terraria.Net.NetManager.SendToClient += OnSendToClient;
 
             ServerApi.Hooks.NetGetData.Register(this, OnGetData, int.MaxValue);
             ServerApi.Hooks.ServerLeave.Register(this, OnLeave);
@@ -126,6 +147,43 @@ namespace Crossplay
             }
         }
 
+        private void OnBroadcast(On.Terraria.Net.NetManager.orig_Broadcast_NetPacket_int orig, NetManager self, NetPacket packet, int ignoreClient)
+        {
+            for (int i = 0; i <= Main.maxPlayers; i++)
+            {
+                if (i != ignoreClient && Netplay.Clients[i].IsConnected() && !InvalidNetPacket(packet, i))
+                {
+                    self.SendData(Netplay.Clients[i].Socket, packet);
+                }
+            }
+        }
+
+        private void OnSendToClient(On.Terraria.Net.NetManager.orig_SendToClient orig, NetManager self, NetPacket packet, int playerId)
+        {
+            if (!InvalidNetPacket(packet, playerId))
+            {
+                orig(self, packet, playerId);
+            }
+        }
+
+        private bool InvalidNetPacket(NetPacket packet, int playerId)
+        {
+            switch (packet.Id)
+            {
+                case 5:
+                    {
+                        var itemNetID = Unsafe.As<byte, short>(ref packet.Buffer.Data[3]); // https://unsafe.as/
+
+                        if (itemNetID > _maxItems[_clientVersions[playerId]])
+                        {
+                            return true;
+                        }
+                    }
+                    break;
+            }
+            return false;
+        }
+
         private void OnLeave(LeaveEventArgs args)
             => _clientVersions[args.Who] = 0;
 
@@ -149,6 +207,7 @@ namespace Crossplay
                 276 => "v1.4.4.7",
                 277 => "v1.4.4.8",
                 278 => "v1.4.4.8.1",
+                279 => "v1.4.4.9",
                 _ => $"Unknown{version}",
             };
     }
